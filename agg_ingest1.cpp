@@ -268,9 +268,11 @@ int ingest1(const char *input,const char *output,char *ref,bool exit_on_mismatch
       while(ptr[alt_len]!='\t') alt_len++;
       if(ptr[0]!='.') 
 	is_variant=true;
-      
 
-      for(int i=0;i<3;i++)  ptr = kstrtok(NULL,NULL,&aux);// gets us to INFO
+      char * QUAL_ptr = kstrtok(NULL, NULL, &aux);
+      assert (QUAL_ptr != NULL);
+      
+      for(int i=0;i<2;i++)  ptr = kstrtok(NULL,NULL,&aux);// gets us to INFO
 
       //find END if it is there
       char *end_ptr=strstr(ptr,"END=") ;
@@ -284,15 +286,39 @@ int ingest1(const char *input,const char *output,char *ref,bool exit_on_mismatch
       //if not present, dont output anything (indels ignored)
 
       char *DP_ptr = find_format(ptr,"DP");
+      int GQX = 0;
+      int QUAL = 0;
+
+      // AH: change code to use the minimum of GQ and QUAL fields if
+      // GQX is not defined. See here:
+      // https://support.basespace.illumina.com/knowledgebase/articles/144844-vcf-file
+      // "GQXGenotype quality. GQX is the minimum of the GQ value
+      // and the QUAL column. In general, these are similar values;
+      // taking the minimum makes GQX the more conservative measure of
+      // genotype quality."
       if(DP_ptr!=NULL) {
 	buf[3]=atoi(DP_ptr);
 	char *GQX_ptr = find_format(ptr,"GQX");
-	assert(GQX_ptr!=NULL);
+	if (GQX_ptr == NULL) 
+	  {
+	    GQX_ptr = find_format(ptr,"GQ");
+	    GQX = atoi(GQX_ptr);
+	    if (QUAL_ptr[0] != '.') 
+	      {
+		QUAL = atoi(QUAL_ptr);
+		if (QUAL < GQX)
+		  GQX = QUAL;
+	      }
+	  }
+	else
+	  {
+	    GQX = atoi(GQX_ptr);
+	  }
 	
 	//trying to reduce entropy on GQ to get better compression performance.
 	//1. rounds down to nearest 10. 
 	//2. sets gq to min(gq,100). 
-	buf[4]=atoi(GQX_ptr)/10;
+	buf[4]=GQX/10;
 	buf[4]*=10;
 	if(buf[4]>100) buf[4]=100;
 
